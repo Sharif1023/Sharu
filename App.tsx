@@ -38,6 +38,7 @@ function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
   const location = useLocation();
   const isAdminPage = location.pathname.startsWith('/admin');
 
@@ -45,7 +46,20 @@ function App() {
 
   const loadData = async () => {
     const result = await fetchPortfolioData();
-    if (result) setData(result);
+    if (result) {
+      setData(result);
+      setOffline(false);
+    } else {
+      // N.B. fetchPortfolioData attempts local fallback already, but we mark offline for clarity
+      const backup = typeof window !== 'undefined' ? window.localStorage.getItem('portfolio_backup') : null;
+      if (backup) {
+        setData(JSON.parse(backup));
+        setOffline(true);
+      } else {
+        setData(null);
+        setOffline(true);
+      }
+    }
     setLoading(false);
   };
 
