@@ -49,7 +49,15 @@ const DEFAULT_PORTFOLIO: PortfolioData = {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
-  const endpoints = ['/api/portfolio.php', '/sharunduu/api/portfolio.php', '/api/portfolio', '/sharunduu/api/portfolio'];
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const localApache = isLocalhost ? 'http://localhost' : '';
+  const endpoints = [
+    '/api/portfolio.php',
+    ...(isLocalhost ? [`${localApache}/sharunduu/api/portfolio.php`, `${localApache}/api/portfolio.php`] : []),
+    '/sharunduu/api/portfolio.php',
+    '/api/portfolio',
+    '/sharunduu/api/portfolio'
+  ];
   const errors: any[] = [];
   try {
     for (const ep of endpoints) {
@@ -59,7 +67,10 @@ export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
           const text = await res.text();
           try {
             const json = JSON.parse(text);
-            if (json.success && json.data) return json.data as PortfolioData;
+            if (json.success && json.data) {
+              console.info('fetchPortfolioData: success via', ep);
+              return json.data as PortfolioData;
+            }
             // If 200 but no data, continue to next
           } catch (parseErr) {
             console.warn(`Invalid JSON from ${ep}:`, parseErr, 'raw:', text.slice(0, 300));
@@ -98,7 +109,15 @@ export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
 };
 
 export const updatePortfolioData = async (data: PortfolioData): Promise<boolean> => {
-  const endpoints = ['/api/portfolio.php', '/sharunduu/api/portfolio.php', '/api/portfolio', '/sharunduu/api/portfolio'];
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const localApache = isLocalhost ? 'http://localhost' : '';
+  const endpoints = [
+    '/api/portfolio.php',
+    ...(isLocalhost ? [`${localApache}/sharunduu/api/portfolio.php`, `${localApache}/api/portfolio.php`] : []),
+    '/sharunduu/api/portfolio.php',
+    '/api/portfolio',
+    '/sharunduu/api/portfolio'
+  ];
   const errors: any[] = [];
 
   try {
@@ -113,6 +132,7 @@ export const updatePortfolioData = async (data: PortfolioData): Promise<boolean>
     // Try endpoints sequentially
     for (const ep of endpoints) {
       try {
+        console.info('Trying endpoint', ep.slice(0, 200));
         const res = await fetch(ep, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
