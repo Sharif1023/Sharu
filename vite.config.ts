@@ -16,7 +16,8 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: 'http://localhost',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, '/api')
+          // Rewrite /api/* -> /sharunduu/api/* so Vite forwards to Apache's copied api folder
+          rewrite: (path) => path.replace(/^\/api/, '/sharunduu/api')
         }
       }
     },
