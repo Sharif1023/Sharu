@@ -49,21 +49,33 @@ const DEFAULT_PORTFOLIO: PortfolioData = {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
+  const endpoints = ['/api/portfolio.php', '/sharunduu/api/portfolio.php', '/api/portfolio', '/sharunduu/api/portfolio'];
+  const errors: any[] = [];
   try {
-    // Try server endpoint first
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (const ep of endpoints) {
       try {
-        const res = await fetch('/api/portfolio.php');
+        const res = await fetch(ep, { method: 'GET' });
         if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) return json.data as PortfolioData;
-          if (res.status === 404) return DEFAULT_PORTFOLIO;
+          const text = await res.text();
+          try {
+            const json = JSON.parse(text);
+            if (json.success && json.data) return json.data as PortfolioData;
+            // If 200 but no data, continue to next
+          } catch (parseErr) {
+            console.warn(`Invalid JSON from ${ep}:`, parseErr, 'raw:', text.slice(0, 300));
+            errors.push({ endpoint: ep, parseErr, raw: text });
+            continue;
+          }
+        } else if (res.status === 404) {
+          // Not found at this endpoint, try next
+          errors.push({ endpoint: ep, status: res.status });
+          continue;
         } else {
-          console.warn(`API fetch attempt ${attempt} returned status ${res.status}`);
+          errors.push({ endpoint: ep, status: res.status });
+          continue;
         }
       } catch (err) {
-        console.warn(`API fetch attempt ${attempt} failed:`, err);
-        if (attempt < 2) await sleep(1000 * attempt);
+        errors.push({ endpoint: ep, err });
         continue;
       }
     }
@@ -71,16 +83,14 @@ export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
     // Fallback to localStorage backup so the site remains usable offline
     const backup = typeof window !== 'undefined' ? window.localStorage.getItem('portfolio_backup') : null;
     if (backup) {
-      console.warn('Using local portfolio backup due to remote fetch failure.');
+      console.warn('Using local portfolio backup due to remote fetch failure. Errors:', errors);
       return JSON.parse(backup) as PortfolioData;
     }
 
-    // If everything fails, return a default empty portfolio so UI can render
-    console.warn('No remote or local portfolio found; returning default portfolio.');
+    console.warn('No remote or local portfolio found; returning default portfolio. Errors:', errors);
     return DEFAULT_PORTFOLIO;
   } catch (err) {
-    console.error('Critical Fetch operation failed:', err);
-    // Try local backup as last resort
+    console.error('Critical Fetch operation failed:', err, 'Errors:', errors);
     const backup = typeof window !== 'undefined' ? window.localStorage.getItem('portfolio_backup') : null;
     if (backup) return JSON.parse(backup) as PortfolioData;
     return DEFAULT_PORTFOLIO;
@@ -88,6 +98,9 @@ export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
 };
 
 export const updatePortfolioData = async (data: PortfolioData): Promise<boolean> => {
+  const endpoints = ['/api/portfolio.php', '/sharunduu/api/portfolio.php', '/api/portfolio', '/sharunduu/api/portfolio'];
+  const errors: any[] = [];
+
   try {
     // Save locally first (optimistic UX)
     if (typeof window !== 'undefined') {
@@ -97,33 +110,50 @@ export const updatePortfolioData = async (data: PortfolioData): Promise<boolean>
     // Notify UI immediately
     window.dispatchEvent(new CustomEvent('portfolio-data-updated', { detail: data }));
 
-    // Background upsert with retry strategy (fire-and-forget)
-    (async function tryUpsert(attempt = 1) {
+    // Try endpoints sequentially
+    for (const ep of endpoints) {
       try {
-        const res = await fetch('/api/portfolio.php', {
+        const res = await fetch(ep, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
 
-        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
-        const json = await res.json();
-        if (!json.success) throw new Error(json.message || 'Unknown server error');
+        const text = await res.text();
+        if (!res.ok) {
+          errors.push({ endpoint: ep, status: res.status, body: text.slice(0, 500) });
+          continue;
+        }
 
-        console.info('Server portfolio upsert successful');
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('portfolio-data-synced', { detail: { time: new Date().toISOString() } }));
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch (parseErr) {
+          errors.push({ endpoint: ep, parseErr, raw: text.slice(0, 500) });
+          continue;
+        }
+
+        if (json.success) {
+          console.info('Server portfolio upsert successful via', ep);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('portfolio-data-synced', { detail: { time: new Date().toISOString(), endpoint: ep } }));
+          }
+          return true;
+        } else {
+          errors.push({ endpoint: ep, message: json.message || 'unknown' });
+          continue;
         }
       } catch (err) {
-        console.error('API update failed on attempt', attempt, err);
-        if (attempt < 3) {
-          const wait = 2000 * attempt;
-          setTimeout(() => tryUpsert(attempt + 1), wait);
-        }
+        errors.push({ endpoint: ep, err });
+        continue;
       }
-    })();
+    }
 
-    return true;
+    console.error('All API endpoints failed:', errors);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('portfolio-sync-error', { detail: errors }));
+    }
+    return false;
   } catch (err) {
     console.error('Update operation failed:', err);
     return false;

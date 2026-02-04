@@ -88,6 +88,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme }) => {
     return () => window.removeEventListener('portfolio-data-synced', handler);
   }, []);
 
+  // If sync fails on server, get details and show an error toast
+  useEffect(() => {
+    const handler = (e: any) => {
+      const errors = e?.detail || [];
+      // pick a readable message if possible
+      let message = 'Save failed — server error';
+      if (errors && errors.length) {
+        const first = errors[0];
+        if (first.message) message = `Save failed: ${first.message}`;
+        else if (first.status) message = `Save failed: HTTP ${first.status}`;
+        else if (first.err && first.err.message) message = `Save failed: ${first.err.message}`;
+      }
+      showToast('error', message);
+    };
+    window.addEventListener('portfolio-sync-error', handler as any);
+    return () => window.removeEventListener('portfolio-sync-error', handler as any);
+  }, []);
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const targetUser = data?.auth?.username || 'admin';
