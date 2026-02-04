@@ -1,0 +1,46 @@
+{
+    "version": 1,
+    "auth": {
+        "username": "admin",
+        "password": "admin"
+    },
+    "hero": {
+        "title1": "Pinged",
+        "title2": "Via Test",
+        "subtitle": "Testing proxy save",
+        "backgroundImage": ""
+    },
+    "about": {
+        "homepageTitle1": "TestSave",
+        "homepageTitleAccent": "OK",
+        "homepageDescription": "Saved via curl proxied through Vite",
+        "homepageImage": "",
+        "detailedBio": "Updated test",
+        "detailedImage": "",
+        "skills": [],
+        "education": [],
+        "timeline": []
+    },
+    "contact": {
+        "email": "test@example.com",
+        "phone": "",
+        "whatsapp": "",
+        "github": "",
+        "linkedin": "",
+        "facebook": "",
+        "instagram": "",
+        "customLinks": []
+    },
+    "gallery": [],
+    "projects": [],
+    "services": [],
+    "menuNames": {
+        "public": {
+            "home": "Home"
+        },
+        "admin": {
+            "hero": "Hero"
+        }
+    },
+    "mediaLibrary": []
+}
