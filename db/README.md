@@ -21,7 +21,6 @@ Notes:
 - The frontend now calls `/api/portfolio` (GET to read, POST to upsert). The PHP endpoint performs the same normalization previously done in the Supabase client.
 - After switching to XAMPP, remove Supabase client dependency: run `npm prune` or remove `@supabase/supabase-js` from `package.json` and reinstall packages.
 
-If you want, I can:
-- Add more PHP endpoints (file uploads, media serving) ✅
-- Add a helper script to import MySQL schema automatically ✅
-- Replace the remaining Postgres artifacts across the repo ✅
+
+
+
