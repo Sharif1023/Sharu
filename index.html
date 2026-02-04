@@ -1,6 +1,6 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,15 +8,18 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;800&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;800&family=Bebas+Neue&display=swap"
+    rel="stylesheet">
   <style>
     :root {
       --bg-dark: #050505;
-      --bg-light: #E0FFFF; /* Exclusive Light Cyan */
+      --bg-light: #E0FFFF;
+      /* Exclusive Light Cyan */
       --text-dark: #fcfcfc;
       --text-light: #0a0a0a;
     }
-    
+
     body {
       margin: 0;
       padding: 0;
@@ -26,16 +29,37 @@
       transition: background-color 1.2s cubic-bezier(0.16, 1, 0.3, 1), color 1.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    body.dark { background-color: var(--bg-dark); color: var(--text-dark); }
-    body.light { background-color: var(--bg-light); color: var(--text-light); }
+    body.dark {
+      background-color: var(--bg-dark);
+      color: var(--text-dark);
+    }
 
-    .font-display { font-family: 'Bebas Neue', cursive; }
-    
-    ::selection { background: #000; color: #fff; }
+    body.light {
+      background-color: var(--bg-light);
+      color: var(--text-light);
+    }
 
-    ::-webkit-scrollbar { width: 2px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 0; }
+    .font-display {
+      font-family: 'Bebas Neue', cursive;
+    }
+
+    ::selection {
+      background: #000;
+      color: #fff;
+    }
+
+    ::-webkit-scrollbar {
+      width: 2px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 0;
+    }
 
     .grain-overlay {
       position: fixed;
@@ -70,6 +94,7 @@
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
+
     .no-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
@@ -85,17 +110,18 @@
       "react-dom/": "https://esm.sh/react-dom@^19.0.0/",
       "react-dom": "https://esm.sh/react-dom@^19.0.0",
       "react-router-dom": "https://esm.sh/react-router-dom@^6.28.0",
-      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.46.1",
       "jspdf": "https://esm.sh/jspdf@^2.5.1"
     }
   }
   </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
+
 <body class="light">
   <div class="mesh-gradient"></div>
   <div class="grain-overlay"></div>
   <div id="root"></div>
-<script type="module" src="/index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

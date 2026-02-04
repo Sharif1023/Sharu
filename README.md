@@ -18,3 +18,13 @@ View your app in AI Studio: https://ai.studio/apps/drive/1gd7qTKxrJQF3-wRDe7E1wD
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+---
+
+⚠️ If you migrated from Supabase to XAMPP/MySQL: remove unused Supabase packages and update lockfile:
+
+- Run `npm prune` to remove unused packages from node_modules
+- Optionally remove `@supabase/supabase-js` from `package.json` (already removed in this repo) and run `npm install` to update `package-lock.json`
+
+Also copy the `api/` folder to your XAMPP `htdocs` directory and import `db/mysql_init.sql` / `db/mysql_seed.sql` into your MySQL database.

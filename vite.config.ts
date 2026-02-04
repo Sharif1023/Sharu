@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => {
       watch: {
         usePolling: true,
         interval: 1000
+      },
+      proxy: {
+        '/api': {
+          target: 'http://localhost',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, '/api')
+        }
       }
     },
     plugins: [react()],

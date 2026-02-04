@@ -1,6 +1,5 @@
 
 import { Project, Service, GalleryItem, MenuNames, ContactInfo } from '../types';
-import { supabase } from './supabase';
 
 export interface PortfolioData {
   version: number;
@@ -51,22 +50,22 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const fetchPortfolioData = async (): Promise<PortfolioData | null> => {
   try {
-    // Try a couple of times to reach Supabase (helps transient network blips)
+    // Try server endpoint first
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const { data, error } = await supabase
-        .from('portfolio_config')
-        .select('data')
-        .eq('id', 1)
-        .maybeSingle();
-
-      if (error) {
-        console.warn(`Supabase fetch attempt ${attempt} failed:`, error.message);
+      try {
+        const res = await fetch('/api/portfolio.php');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) return json.data as PortfolioData;
+          if (res.status === 404) return DEFAULT_PORTFOLIO;
+        } else {
+          console.warn(`API fetch attempt ${attempt} returned status ${res.status}`);
+        }
+      } catch (err) {
+        console.warn(`API fetch attempt ${attempt} failed:`, err);
         if (attempt < 2) await sleep(1000 * attempt);
         continue;
       }
-
-      if (data) return data.data as PortfolioData;
-      break;
     }
 
     // Fallback to localStorage backup so the site remains usable offline
@@ -101,14 +100,22 @@ export const updatePortfolioData = async (data: PortfolioData): Promise<boolean>
     // Background upsert with retry strategy (fire-and-forget)
     (async function tryUpsert(attempt = 1) {
       try {
-        const { error } = await supabase
-          .from('portfolio_config')
-          .upsert({ id: 1, data, updated_at: new Date().toISOString() });
+        const res = await fetch('/api/portfolio.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
 
-        if (error) throw error;
-        console.info('Supabase upsert successful');
+        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+        const json = await res.json();
+        if (!json.success) throw new Error(json.message || 'Unknown server error');
+
+        console.info('Server portfolio upsert successful');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('portfolio-data-synced', { detail: { time: new Date().toISOString() } }));
+        }
       } catch (err) {
-        console.error('Supabase update failed on attempt', attempt, err);
+        console.error('API update failed on attempt', attempt, err);
         if (attempt < 3) {
           const wait = 2000 * attempt;
           setTimeout(() => tryUpsert(attempt + 1), wait);

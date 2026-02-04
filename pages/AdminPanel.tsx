@@ -1,12 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Trash2, Save, LogOut, X, FolderOpen, Camera, Menu, Sun, Moon,
-  Upload, Eye, EyeOff, Loader2, Phone, Mail, Link as LinkIcon, Smartphone,
-  Zap, Code, LayoutDashboard, Database, ShieldCheck, Activity, Copy, Check,
-  ShieldAlert, RotateCcw, FileText, ArrowLeft, GraduationCap, Briefcase, User,
-  Globe, MessageCircle, Instagram, Github, Linkedin, Facebook
+  Trash2, Save, LogOut, X, FolderOpen, Camera, Menu,
+  Upload, Eye, EyeOff, Loader2, Phone,
+  Zap, LayoutDashboard, Database, ShieldCheck, ShieldAlert, ArrowLeft, GraduationCap, Briefcase, User,
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { fetchPortfolioData, updatePortfolioData, PortfolioData } from '../utils/storage';
@@ -16,19 +13,25 @@ interface AdminPanelProps {
   toggleTheme: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
+type SaveToastType = 'success' | 'error' | 'info';
+
+const AdminPanel: React.FC<AdminPanelProps> = ({ theme }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'hero' | 'about' | 'projects' | 'services' | 'media' | 'gallery' | 'contact' | 'security'>('hero');
   const [data, setData] = useState<PortfolioData | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [revealPass, setRevealPass] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+
+  // toast state
+  const [toast, setToast] = useState<{ show: boolean; type: SaveToastType; message: string } | null>(null);
 
   const [showPicker, setShowPicker] = useState(false);
   const [pickerCallback, setPickerCallback] = useState<((url: string) => void) | null>(null);
@@ -47,15 +50,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
     if (result) setData(result);
   };
 
-  // Autosave: debounce updates and perform optimistic local save + background sync
+  const showToast = (type: SaveToastType, message: string) => {
+    setToast({ show: true, type, message });
+    window.setTimeout(() => setToast(null), 2200);
+  };
+
+  // Autosave: debounce updates (only after login)
   useEffect(() => {
     if (!isLoggedIn || !data) return;
-    const id = setTimeout(() => {
+    const id = window.setTimeout(async () => {
       setIsSaving(true);
-      updatePortfolioData(data).then(() => setIsSaving(false));
+      try {
+        const ok = await updatePortfolioData(data);
+        setIsSaving(false);
+        if (ok === false) {
+          showToast('error', 'Auto-save failed');
+        } else {
+          showToast('info', 'Auto-saved');
+        }
+      } catch {
+        setIsSaving(false);
+        showToast('error', 'Auto-save failed');
+      }
     }, 1000);
+
     return () => clearTimeout(id);
   }, [data, isLoggedIn]);
+
+  // Show last-sync time when normalized DB sync completes
+  useEffect(() => {
+    const handler = (e: any) => {
+      const time = e?.detail?.time || new Date().toISOString();
+      setLastSynced(time);
+      showToast('success', 'Synchronized to database');
+    };
+    window.addEventListener('portfolio-data-synced', handler);
+    return () => window.removeEventListener('portfolio-data-synced', handler);
+  }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,8 +97,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
       setIsLoggedIn(true);
       sessionStorage.setItem('admin_session', 'active');
       setError('');
+      showToast('success', 'Authorized');
     } else {
       setError('Access Denied: Invalid Security Pointer.');
+      showToast('error', 'Invalid credentials');
     }
   };
 
@@ -80,13 +113,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
   const handleSave = async () => {
     if (!data) return;
     setIsSaving(true);
-    const success = await updatePortfolioData(data);
-    setIsSaving(false);
-    if (success) {
-      // Optimistic local save complete; background sync started
-      console.info('Portfolio saved locally; server sync initiated.');
-    } else {
-      console.error('Registry Sync Failure.');
+    try {
+      const success = await updatePortfolioData(data);
+      setIsSaving(false);
+      if (success === false) {
+        showToast('error', 'Save failed');
+      } else {
+        showToast('success', 'Saved successfully');
+      }
+    } catch {
+      setIsSaving(false);
+      showToast('error', 'Save failed');
     }
   };
 
@@ -104,41 +141,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
       reader.onload = () => {
         const newData = { ...data, mediaLibrary: [reader.result as string, ...data.mediaLibrary] };
         setData(newData);
-        // rely on autosave / optimistic update to persist in background
         setIsProcessing(false);
+        showToast('info', 'Asset added (auto-save)');
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const bgClass = isDark ? 'bg-[#050505]' : 'bg-[#E0FFFF]';
+  const bgClass = isDark ? 'bg-[#050505] text-white' : 'bg-[#E0FFFF] text-black';
   const sidebarBg = isDark ? 'bg-zinc-950/90' : 'bg-white/90';
   const borderClass = isDark ? 'border-zinc-900' : 'border-zinc-200';
 
-  // Component for the exclusive SHARIFFOLIO logo used in Admin
+  const mutedText = isDark ? 'text-white/50' : 'text-black/60';
+  const subtleText = isDark ? 'text-white/30' : 'text-black/40';
+
+  const cardBg = isDark ? 'bg-white/5 border-white/5' : 'bg-white border-black/10';
+  const cardTitleBorder = isDark ? 'border-white/5' : 'border-black/10';
+  const cardTitleText = isDark ? 'text-white/60' : 'text-black/70';
+
+  // Admin logo
   const AdminLogo = () => (
     <Link to="/" className="flex items-center cursor-pointer pointer-events-auto group relative transition-all duration-300">
-      {/* Architectural Brackets */}
       <motion.div className="absolute -top-1.5 -left-1.5 w-2 h-2 border-t-2 border-l-2 border-emerald-500 opacity-0 -translate-x-2 -translate-y-2 group-hover:opacity-100 group-hover:translate-x-0 group-hover:translate-y-0 transition-all duration-700" />
       <motion.div className="absolute -bottom-1.5 -right-1.5 w-2 h-2 border-b-2 border-r-2 border-emerald-500 opacity-0 translate-x-2 translate-y-2 group-hover:opacity-100 group-hover:translate-x-0 group-hover:translate-y-0 transition-all duration-700" />
 
       <div className="flex flex-col items-start px-2 py-1">
         <div className="flex items-center">
           <span className={`font-display text-xl md:text-2xl tracking-[0.4em] font-extrabold leading-none transition-colors duration-500 ${isDark ? 'text-white' : 'text-zinc-900'}`}>SHARIF</span>
-
-          {/* Kinetic Separator */}
           <div className={`w-[1.5px] h-3 mx-2 md:mx-3 transition-all duration-500 ease-out group-hover:h-6 group-hover:bg-emerald-500 ${isDark ? 'bg-white/20' : 'bg-black/20'}`} />
-
           <span className={`font-display text-xl md:text-2xl tracking-[0.2em] font-light group-hover:text-emerald-400 group-hover:opacity-100 italic transition-all duration-700 leading-none ${isDark ? 'text-white/40' : 'text-black/40'}`}>FOLIO</span>
         </div>
       </div>
     </Link>
   );
 
+  // ---------- LOGIN SCREEN ----------
   if (!isLoggedIn) return (
     <div className={`min-h-screen flex flex-col items-center justify-center ${bgClass} px-6 transition-colors duration-1000`}>
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <Link to="/" className={`group flex items-center gap-3 px-6 py-3 rounded-full transition-all ${isDark ? 'text-white/30 hover:text-white' : 'text-black/30 hover:text-black'}`}>
+        <Link to="/" className={`group flex items-center gap-3 px-6 py-3 rounded-full transition-all ${subtleText} hover:opacity-100`}>
           <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
           <span className="text-[10px] uppercase tracking-[0.4em] font-black">Portfolio View</span>
         </Link>
@@ -149,23 +190,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
           <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-4 border border-emerald-500/20">
             <ShieldCheck size={32} className="text-emerald-500" />
           </div>
-          <h1 className="font-display text-4xl uppercase tracking-tighter">Auth Protocol</h1>
-          <p className="text-[9px] uppercase tracking-[0.5em] font-black opacity-30 mt-1">Shariffolio Admin</p>
+          <h1 className={`font-display text-4xl uppercase tracking-tighter ${isDark ? 'text-white' : 'text-black'}`}>Auth Protocol</h1>
+          <p className={`text-[9px] uppercase tracking-[0.5em] font-black mt-1 ${subtleText}`}>Shariffolio Admin</p>
         </div>
+
         <form onSubmit={handleLogin} className="space-y-6">
           <InputField isDark={isDark} label="Identifier" value={usernameInput} onChange={setUsernameInput} />
           <div className="relative">
             <InputField isDark={isDark} label="Passphrase" type={revealPass ? "text" : "password"} value={passwordInput} onChange={setPasswordInput} />
-            <button type="button" onClick={() => setRevealPass(!revealPass)} className="absolute right-5 bottom-5 p-2 opacity-30">{revealPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+            <button type="button" onClick={() => setRevealPass(!revealPass)} className={`absolute right-5 bottom-5 p-2 ${subtleText}`}>
+              {revealPass ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
+
           {error && <p className="text-[9px] text-red-500 uppercase font-bold tracking-widest text-center">{error}</p>}
-          <button type="submit" className={`w-full py-5 ${isDark ? 'bg-white text-black' : 'bg-black text-white'} font-black uppercase tracking-[0.5em] text-[10px] rounded-2xl transition-all`}>Authorize</button>
+
+          <button type="submit" className={`w-full py-5 ${isDark ? 'bg-white text-black' : 'bg-black text-white'} font-black uppercase tracking-[0.5em] text-[10px] rounded-2xl transition-all`}>
+            Authorize
+          </button>
         </form>
       </motion.div>
+
+      <SaveToast toast={toast} isDark={isDark} />
     </div>
   );
 
-  if (!data) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (!data) return (
+    <div className={`min-h-screen flex items-center justify-center ${bgClass}`}>
+      <Loader2 className="animate-spin" />
+    </div>
+  );
 
   const tabs = [
     { id: 'hero', label: 'Hero', icon: <LayoutDashboard size={18} /> },
@@ -182,16 +236,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
       {/* MOBILE HEADER */}
       <div className={`md:hidden sticky top-0 z-[60] p-6 flex justify-between items-center ${sidebarBg} border-b ${borderClass} backdrop-blur-xl`}>
         <AdminLogo />
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-3 bg-white/5 rounded-xl"><Menu size={20} /></button>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className={`p-3 rounded-xl ${isDark ? 'bg-white/5' : 'bg-black/5'}`}>
+          <Menu size={20} />
+        </button>
       </div>
 
       {/* MOBILE QUICK NAV */}
-      <div className="md:hidden sticky top-[77px] z-[50] overflow-x-auto no-scrollbar bg-black/5 dark:bg-white/5 border-b border-white/5 backdrop-blur-xl flex px-4 py-3 gap-2">
+      <div className={`md:hidden sticky top-[77px] z-[50] overflow-x-auto no-scrollbar border-b backdrop-blur-xl flex px-4 py-3 gap-2 ${isDark ? 'bg-black/20 border-white/10' : 'bg-white/60 border-black/10'}`}>
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`whitespace-nowrap px-6 py-2 rounded-full text-[9px] uppercase font-black tracking-widest transition-all ${activeTab === tab.id ? 'bg-emerald-500 text-white shadow-lg' : 'bg-white/10 opacity-40'}`}
+            className={`whitespace-nowrap px-6 py-2 rounded-full text-[9px] uppercase font-black tracking-widest transition-all
+              ${activeTab === tab.id
+                ? 'bg-emerald-500 text-white shadow-lg'
+                : isDark ? 'bg-white/10 text-white/60' : 'bg-black/5 text-black/70'
+              }`}
           >
             {tab.label}
           </button>
@@ -205,25 +265,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
         </button>
       </div>
 
-      {/* SIDEBAR NAVIGATION (Desktop) */}
+      {/* SIDEBAR NAVIGATION */}
       <aside className={`fixed md:sticky inset-y-0 left-0 w-72 border-r ${borderClass} ${sidebarBg} backdrop-blur-xl flex flex-col z-[70] md:h-screen transition-transform duration-500 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="p-10 mb-4">
           <AdminLogo />
-          <p className="text-[8px] uppercase tracking-[0.5em] font-black opacity-20 mt-4">Registry Control</p>
+          <p className={`text-[8px] uppercase tracking-[0.5em] font-black mt-4 ${subtleText}`}>Registry Control</p>
         </div>
+
         <nav className="flex-1 px-6 space-y-1 overflow-y-auto no-scrollbar">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }} className={`flex items-center gap-4 px-6 py-4 rounded-xl text-[9px] uppercase font-black tracking-widest w-full text-left transition-all ${activeTab === tab.id ? 'bg-emerald-500 text-white shadow-xl' : 'opacity-30 hover:opacity-100 hover:bg-white/5'}`}>
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+              className={`flex items-center gap-4 px-6 py-4 rounded-xl text-[9px] uppercase font-black tracking-widest w-full text-left transition-all
+                ${activeTab === tab.id
+                  ? 'bg-emerald-500 text-white shadow-xl'
+                  : isDark ? 'text-white/50 hover:text-white hover:bg-white/5' : 'text-black/70 hover:text-black hover:bg-black/5'
+                }`}
+            >
               {tab.icon} {tab.label}
             </button>
           ))}
-          <div className="h-[1px] bg-white/5 my-4" />
-          <button onClick={() => { setActiveTab('security'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-4 px-6 py-4 rounded-xl text-[9px] uppercase font-black tracking-widest w-full text-left transition-all ${activeTab === 'security' ? 'bg-red-500 text-white' : 'opacity-30 hover:opacity-100'}`}>
+
+          <div className={`h-[1px] my-4 ${isDark ? 'bg-white/10' : 'bg-black/10'}`} />
+
+          <button
+            onClick={() => { setActiveTab('security'); setIsMobileMenuOpen(false); }}
+            className={`flex items-center gap-4 px-6 py-4 rounded-xl text-[9px] uppercase font-black tracking-widest w-full text-left transition-all
+              ${activeTab === 'security'
+                ? 'bg-red-500 text-white'
+                : isDark ? 'text-white/50 hover:text-white' : 'text-black/70 hover:text-black'
+              }`}
+          >
             <ShieldCheck size={18} /> Security
           </button>
         </nav>
-        <div className="p-8 border-t border-white/5">
-          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 text-[9px] uppercase font-black tracking-widest opacity-30 hover:opacity-100 transition-all">
+
+        <div className={`p-8 border-t ${isDark ? 'border-white/10' : 'border-black/10'}`}>
+          <button onClick={handleLogout} className={`w-full flex items-center justify-center gap-3 text-[9px] uppercase font-black tracking-widest transition-all ${subtleText} hover:opacity-100`}>
             <LogOut size={14} /> Terminate Session
           </button>
         </div>
@@ -234,11 +313,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
         <div className="max-w-4xl mx-auto space-y-12">
           <header className="flex justify-between items-center mb-12">
             <div>
-              <span className="text-[9px] uppercase tracking-[0.5em] font-black opacity-30 mb-1 block">Module Pointer</span>
-              <h2 className="text-5xl md:text-7xl font-display uppercase tracking-tighter">{activeTab}</h2>
+              <span className={`text-[9px] uppercase tracking-[0.5em] font-black mb-1 block ${subtleText}`}>Module Pointer</span>
+              <h2 className={`text-5xl md:text-7xl font-display uppercase tracking-tighter ${isDark ? 'text-white' : 'text-black'}`}>{activeTab}</h2>
+              <p className={`text-[10px] opacity-30 mt-2 ${isDark ? 'text-white/40' : 'text-black/40'}`}>Last sync: {lastSynced ? new Date(lastSynced).toLocaleString() : 'Never'}</p>
             </div>
-            <button onClick={handleSave} className={`hidden md:flex items-center gap-3 px-10 py-5 rounded-2xl ${isDark ? 'bg-white text-black' : 'bg-black text-white'} text-[10px] uppercase font-black tracking-[0.4em] transition-all hover:scale-105 active:scale-95`}>
-              <Save size={16} /> Sync registry
+
+            <button
+              onClick={handleSave}
+              className={`hidden md:flex items-center gap-3 px-10 py-5 rounded-2xl text-[10px] uppercase font-black tracking-[0.4em] transition-all hover:scale-105 active:scale-95
+                ${isDark ? 'bg-white text-black' : 'bg-black text-white'}`}
+            >
+              {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+              Sync registry
             </button>
           </header>
 
@@ -246,7 +332,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* HERO SECTION */}
             {activeTab === 'hero' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="hero" className="space-y-8">
-                <AdminCard title="Identity Visuals">
+                <AdminCard title="Identity Visuals" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <div className="grid md:grid-cols-2 gap-6">
                     <InputField label="Title Line 1" value={data.hero.title1} onChange={(v: any) => setData({ ...data, hero: { ...data.hero, title1: v } })} isDark={isDark} />
                     <InputField label="Title Line 2" value={data.hero.title2} onChange={(v: any) => setData({ ...data, hero: { ...data.hero, title2: v } })} isDark={isDark} />
@@ -257,10 +343,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
               </motion.div>
             )}
 
-            {/* PERSONA SECTION */}
+            {/* ABOUT SECTION */}
             {activeTab === 'about' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="about" className="space-y-12">
-                <AdminCard title="Homepage Narrative">
+                <AdminCard title="Homepage Narrative" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <div className="grid md:grid-cols-2 gap-6">
                     <InputField label="Persona Headline" value={data.about.homepageTitle1} onChange={(v: any) => setData({ ...data, about: { ...data.about, homepageTitle1: v } })} isDark={isDark} />
                     <InputField label="Accent Word" value={data.about.homepageTitleAccent} onChange={(v: any) => setData({ ...data, about: { ...data.about, homepageTitleAccent: v } })} isDark={isDark} />
@@ -269,49 +355,120 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
                   <InputField label="Profile Image" value={data.about.homepageImage} onOpenLibrary={() => openPicker(url => setData({ ...data, about: { ...data.about, homepageImage: url } }))} isDark={isDark} />
                 </AdminCard>
 
-                <AdminCard title="Detailed Biography (About Page)">
+                <AdminCard title="Detailed Biography (About Page)" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <TextArea label="Comprehensive Life Story" value={data.about.detailedBio} onChange={(v: any) => setData({ ...data, about: { ...data.about, detailedBio: v } })} isDark={isDark} />
                   <InputField label="Detailed View Image" value={data.about.detailedImage} onOpenLibrary={() => openPicker(url => setData({ ...data, about: { ...data.about, detailedImage: url } }))} isDark={isDark} />
                   <InputField label="CV / Resume Pointer" value={data.about.cvUrl || ''} onChange={(v: any) => setData({ ...data, about: { ...data.about, cvUrl: v } })} onOpenLibrary={() => openPicker(url => setData({ ...data, about: { ...data.about, cvUrl: url } }))} isDark={isDark} />
                 </AdminCard>
 
-                <AdminCard title="Technical Capabilities (Skills Matrix)">
+                <AdminCard title="Technical Capabilities (Skills Matrix)" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   {data.about.skills.map((skill, i) => (
-                    <div key={i} className="flex gap-4 items-end border-b border-white/5 pb-6 mb-6 last:border-0 last:mb-0">
-                      <div className="flex-1"><InputField label="Skill Name" value={skill.name} onChange={(v: any) => { const ns = [...data.about.skills]; ns[i].name = v; setData({ ...data, about: { ...data.about, skills: ns } }) }} isDark={isDark} /></div>
-                      <div className="w-24"><InputField label="Level %" type="number" value={skill.level.toString()} onChange={(v: any) => { const ns = [...data.about.skills]; ns[i].level = parseInt(v) || 0; setData({ ...data, about: { ...data.about, skills: ns } }) }} isDark={isDark} /></div>
-                      <button onClick={() => { const ns = data.about.skills.filter((_, idx) => idx !== i); setData({ ...data, about: { ...data.about, skills: ns } }) }} className="p-5 text-red-500 hover:bg-red-500/10 rounded-xl transition-all"><Trash2 size={18} /></button>
+                    <div key={i} className={`flex gap-4 items-end pb-6 mb-6 last:mb-0 ${isDark ? 'border-b border-white/10' : 'border-b border-black/10'} last:border-0`}>
+                      <div className="flex-1">
+                        <InputField
+                          label="Skill Name"
+                          value={skill.name}
+                          onChange={(v: any) => {
+                            const ns = [...data.about.skills];
+                            ns[i].name = v;
+                            setData({ ...data, about: { ...data.about, skills: ns } });
+                          }}
+                          isDark={isDark}
+                        />
+                      </div>
+                      <div className="w-24">
+                        <InputField
+                          label="Level %"
+                          type="number"
+                          value={skill.level.toString()}
+                          onChange={(v: any) => {
+                            const ns = [...data.about.skills];
+                            ns[i].level = parseInt(v) || 0;
+                            setData({ ...data, about: { ...data.about, skills: ns } });
+                          }}
+                          isDark={isDark}
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const ns = data.about.skills.filter((_, idx) => idx !== i);
+                          setData({ ...data, about: { ...data.about, skills: ns } });
+                          showToast('info', 'Skill removed (auto-save)');
+                        }}
+                        className={`p-5 rounded-xl transition-all ${isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-500/10'}`}
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   ))}
-                  <button onClick={() => setData({ ...data, about: { ...data.about, skills: [...data.about.skills, { name: 'New Tool', level: 85 }] } })} className="w-full py-4 border-2 border-dashed border-white/5 rounded-xl text-[9px] uppercase font-black opacity-30 hover:opacity-100">+ Add Capability</button>
+
+                  <button
+                    onClick={() => {
+                      setData({ ...data, about: { ...data.about, skills: [...data.about.skills, { name: 'New Tool', level: 85 }] } });
+                      showToast('info', 'Skill added (auto-save)');
+                    }}
+                    className={`w-full py-4 border-2 border-dashed rounded-xl text-[9px] uppercase font-black transition-all
+                      ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                  >
+                    + Add Capability
+                  </button>
                 </AdminCard>
 
-                <AdminCard title="Academic History & Professional Timeline">
+                {/* education + timeline blocks remain same UI-wise */}
+                <AdminCard title="Academic History & Professional Timeline" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <div className="space-y-10">
                     <div>
-                      <h4 className="text-[10px] uppercase font-black tracking-widest opacity-20 mb-4 flex items-center gap-2"><GraduationCap size={14} /> Academic Records</h4>
+                      <h4 className={`text-[10px] uppercase font-black tracking-widest mb-4 flex items-center gap-2 ${subtleText}`}>
+                        <GraduationCap size={14} /> Academic Records
+                      </h4>
+
                       {data.about.education.map((edu, i) => (
-                        <div key={i} className="flex gap-4 items-end border-b border-white/5 pb-4 mb-4">
+                        <div key={i} className={`flex gap-4 items-end pb-4 mb-4 ${isDark ? 'border-b border-white/10' : 'border-b border-black/10'}`}>
                           <div className="flex-1 space-y-2">
-                            <InputField label="Qualification" value={edu.degree} onChange={(v: any) => { const ne = [...data.about.education]; ne[i].degree = v; setData({ ...data, about: { ...data.about, education: ne } }) }} isDark={isDark} />
-                            <InputField label="Institution" value={edu.school} onChange={(v: any) => { const ne = [...data.about.education]; ne[i].school = v; setData({ ...data, about: { ...data.about, education: ne } }) }} isDark={isDark} />
+                            <InputField label="Qualification" value={edu.degree} onChange={(v: any) => { const ne = [...data.about.education]; ne[i].degree = v; setData({ ...data, about: { ...data.about, education: ne } }); }} isDark={isDark} />
+                            <InputField label="Institution" value={edu.school} onChange={(v: any) => { const ne = [...data.about.education]; ne[i].school = v; setData({ ...data, about: { ...data.about, education: ne } }); }} isDark={isDark} />
                           </div>
-                          <button onClick={() => { const ne = data.about.education.filter((_, idx) => idx !== i); setData({ ...data, about: { ...data.about, education: ne } }) }} className="p-5 text-red-500"><Trash2 size={18} /></button>
+                          <button onClick={() => { const ne = data.about.education.filter((_, idx) => idx !== i); setData({ ...data, about: { ...data.about, education: ne } }); showToast('info', 'Education removed (auto-save)'); }} className={`${isDark ? 'text-red-400' : 'text-red-600'} p-5`}>
+                            <Trash2 size={18} />
+                          </button>
                         </div>
                       ))}
-                      <button onClick={() => setData({ ...data, about: { ...data.about, education: [...data.about.education, { degree: 'Degree', school: 'Uni' }] } })} className="w-full py-3 border border-dashed border-white/5 text-[9px] uppercase font-black opacity-30 hover:opacity-100 transition-all">+ Add Degree</button>
+
+                      <button
+                        onClick={() => { setData({ ...data, about: { ...data.about, education: [...data.about.education, { degree: 'Degree', school: 'Uni' }] } }); showToast('info', 'Education added (auto-save)'); }}
+                        className={`w-full py-3 border border-dashed rounded-xl text-[9px] uppercase font-black transition-all
+                          ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                      >
+                        + Add Degree
+                      </button>
                     </div>
 
                     <div>
-                      <h4 className="text-[10px] uppercase font-black tracking-widest opacity-20 mb-4 flex items-center gap-2"><Briefcase size={14} /> Professional Path</h4>
+                      <h4 className={`text-[10px] uppercase font-black tracking-widest mb-4 flex items-center gap-2 ${subtleText}`}>
+                        <Briefcase size={14} /> Professional Path
+                      </h4>
+
                       {data.about.timeline.map((item, i) => (
-                        <div key={i} className="flex gap-4 items-end border-b border-white/5 pb-4 mb-4">
-                          <div className="w-24"><InputField label="Year" value={item.year} onChange={(v: any) => { const nt = [...data.about.timeline]; nt[i].year = v; setData({ ...data, about: { ...data.about, timeline: nt } }) }} isDark={isDark} /></div>
-                          <div className="flex-1"><InputField label="Event" value={item.description} onChange={(v: any) => { const nt = [...data.about.timeline]; nt[i].description = v; setData({ ...data, about: { ...data.about, timeline: nt } }) }} isDark={isDark} /></div>
-                          <button onClick={() => { const nt = data.about.timeline.filter((_, idx) => idx !== i); setData({ ...data, about: { ...data.about, timeline: nt } }) }} className="p-5 text-red-500"><Trash2 size={18} /></button>
+                        <div key={i} className={`flex gap-4 items-end pb-4 mb-4 ${isDark ? 'border-b border-white/10' : 'border-b border-black/10'}`}>
+                          <div className="w-24">
+                            <InputField label="Year" value={item.year} onChange={(v: any) => { const nt = [...data.about.timeline]; nt[i].year = v; setData({ ...data, about: { ...data.about, timeline: nt } }); }} isDark={isDark} />
+                          </div>
+                          <div className="flex-1">
+                            <InputField label="Event" value={item.description} onChange={(v: any) => { const nt = [...data.about.timeline]; nt[i].description = v; setData({ ...data, about: { ...data.about, timeline: nt } }); }} isDark={isDark} />
+                          </div>
+                          <button onClick={() => { const nt = data.about.timeline.filter((_, idx) => idx !== i); setData({ ...data, about: { ...data.about, timeline: nt } }); showToast('info', 'Timeline removed (auto-save)'); }} className={`${isDark ? 'text-red-400' : 'text-red-600'} p-5`}>
+                            <Trash2 size={18} />
+                          </button>
                         </div>
                       ))}
-                      <button onClick={() => setData({ ...data, about: { ...data.about, timeline: [...data.about.timeline, { year: '2025', description: 'Event' }] } })} className="w-full py-3 border border-dashed border-white/5 text-[9px] uppercase font-black opacity-30 hover:opacity-100 transition-all">+ Add Entry</button>
+
+                      <button
+                        onClick={() => { setData({ ...data, about: { ...data.about, timeline: [...data.about.timeline, { year: '2025', description: 'Event' }] } }); showToast('info', 'Timeline added (auto-save)'); }}
+                        className={`w-full py-3 border border-dashed rounded-xl text-[9px] uppercase font-black transition-all
+                          ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                      >
+                        + Add Entry
+                      </button>
                     </div>
                   </div>
                 </AdminCard>
@@ -321,18 +478,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* PROJECTS SECTION */}
             {activeTab === 'projects' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="projects" className="space-y-10">
-                <button onClick={() => setData({ ...data, projects: [{ id: Date.now().toString(), title: 'New Venture', category: 'Dev', tech: [], description: '', imageUrl: '', liveUrl: '' }, ...data.projects] })} className="w-full py-12 border-2 border-dashed border-white/5 rounded-3xl opacity-20 hover:opacity-100 transition-all font-black uppercase text-[10px] tracking-widest">+ Initialize Work Case</button>
+                <button
+                  onClick={() => {
+                    setData({
+                      ...data,
+                      projects: [
+                        { id: Date.now().toString(), title: 'New Venture', category: 'Dev', tech: [], description: '', imageUrl: '', liveUrl: '' },
+                        ...data.projects
+                      ]
+                    });
+                    showToast('info', 'Project added (auto-save)');
+                  }}
+                  className={`w-full py-12 border-2 border-dashed rounded-3xl transition-all font-black uppercase text-[10px] tracking-widest
+                    ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                >
+                  + Initialize Work Case
+                </button>
+
                 {data.projects.map((p, i) => (
-                  <AdminCard key={p.id} title={`Work Archive #${i + 1}`}>
+                  <AdminCard key={p.id} title={`Work Archive #${i + 1}`} isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                     <div className="grid md:grid-cols-2 gap-6">
                       <InputField label="Nomenclature" value={p.title} onChange={(v: any) => { const np = [...data.projects]; np[i].title = v; setData({ ...data, projects: np }); }} isDark={isDark} />
                       <InputField label="Discipline" value={p.category} onChange={(v: any) => { const np = [...data.projects]; np[i].category = v; setData({ ...data, projects: np }); }} isDark={isDark} />
                       <InputField label="Primary Visual" value={p.imageUrl} onOpenLibrary={() => openPicker(url => { const np = [...data.projects]; np[i].imageUrl = url; setData({ ...data, projects: np }); })} isDark={isDark} />
                       <InputField label="Live Node URL" value={p.liveUrl} onChange={(v: any) => { const np = [...data.projects]; np[i].liveUrl = v; setData({ ...data, projects: np }); }} isDark={isDark} />
                     </div>
+
                     <InputField label="Technological Foundation (Comma Separated Tags)" value={p.tech.join(', ')} onChange={(v: any) => { const np = [...data.projects]; np[i].tech = v.split(',').map((s: any) => s.trim()).filter((s: any) => s !== ''); setData({ ...data, projects: np }); }} isDark={isDark} />
                     <TextArea label="Contextual Monologue" value={p.description} onChange={(v: any) => { const np = [...data.projects]; np[i].description = v; setData({ ...data, projects: np }); }} isDark={isDark} />
-                    <button onClick={() => { if (confirm("Confirm registry dissolution?")) setData({ ...data, projects: data.projects.filter(pr => pr.id !== p.id) }) }} className="text-red-500/30 hover:text-red-500 text-[8px] uppercase font-black tracking-widest flex items-center gap-2"><Trash2 size={12} /> Dissolve Registry</button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm("Confirm registry dissolution?")) {
+                          setData({ ...data, projects: data.projects.filter(pr => pr.id !== p.id) });
+                          showToast('info', 'Project removed (auto-save)');
+                        }
+                      }}
+                      className={`${isDark ? 'text-red-400/70 hover:text-red-400' : 'text-red-700/70 hover:text-red-700'} text-[8px] uppercase font-black tracking-widest flex items-center gap-2`}
+                    >
+                      <Trash2 size={12} /> Dissolve Registry
+                    </button>
                   </AdminCard>
                 ))}
               </motion.div>
@@ -341,14 +526,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* SERVICES SECTION */}
             {activeTab === 'services' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="services" className="space-y-10">
-                <button onClick={() => setData({ ...data, services: [{ id: Date.now().toString(), title: 'Technical Pillar', description: '', iconType: 'code' }, ...data.services] })} className="w-full py-12 border-2 border-dashed border-white/5 rounded-3xl opacity-20 hover:opacity-100 transition-all font-black uppercase text-[10px] tracking-widest">+ Add Tech Pillar</button>
+                <button
+                  onClick={() => {
+                    setData({ ...data, services: [{ id: Date.now().toString(), title: 'Technical Pillar', description: '', iconType: 'code' }, ...data.services] });
+                    showToast('info', 'Service added (auto-save)');
+                  }}
+                  className={`w-full py-12 border-2 border-dashed rounded-3xl transition-all font-black uppercase text-[10px] tracking-widest
+                    ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                >
+                  + Add Tech Pillar
+                </button>
+
                 {data.services.map((s, i) => (
-                  <AdminCard key={s.id} title={`Service Registry #${i + 1}`}>
+                  <AdminCard key={s.id} title={`Service Registry #${i + 1}`} isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                     <div className="grid md:grid-cols-2 gap-6">
                       <InputField label="Technical Label" value={s.title} onChange={(v: any) => { const ns = [...data.services]; ns[i].title = v; setData({ ...data, services: ns }); }} isDark={isDark} />
                       <div className="space-y-2">
-                        <label className="text-[9px] uppercase font-black tracking-widest opacity-20">Icon Representation</label>
-                        <select value={s.iconType} onChange={(e) => { const ns = [...data.services]; ns[i].iconType = e.target.value as any; setData({ ...data, services: ns }); }} className={`w-full p-6 rounded-2xl border ${isDark ? 'bg-black border-white/5 text-white' : 'bg-white border-black/5 text-black'} outline-none text-sm`}>
+                        <label className={`text-[9px] uppercase font-black tracking-widest ${subtleText}`}>Icon Representation</label>
+                        <select
+                          value={s.iconType}
+                          onChange={(e) => { const ns = [...data.services]; ns[i].iconType = e.target.value as any; setData({ ...data, services: ns }); }}
+                          className={`w-full p-6 rounded-2xl border outline-none text-sm font-semibold
+                            ${isDark ? 'bg-black border-white/10 text-white' : 'bg-white border-black/10 text-black'}`}
+                        >
                           <option value="code">Code Node</option>
                           <option value="layout">Architectural</option>
                           <option value="zap">Performance</option>
@@ -356,8 +556,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
                         </select>
                       </div>
                     </div>
+
                     <TextArea label="Capability Monologue" value={s.description} onChange={(v: any) => { const ns = [...data.services]; ns[i].description = v; setData({ ...data, services: ns }); }} isDark={isDark} />
-                    <button onClick={() => { if (confirm("Confirm dissolution?")) setData({ ...data, services: data.services.filter(serv => serv.id !== s.id) }) }} className="text-red-500/30 hover:text-red-500 text-[8px] uppercase font-black tracking-widest flex items-center gap-2"><Trash2 size={12} /> Remove Pillar</button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm("Confirm dissolution?")) {
+                          setData({ ...data, services: data.services.filter(serv => serv.id !== s.id) });
+                          showToast('info', 'Service removed (auto-save)');
+                        }
+                      }}
+                      className={`${isDark ? 'text-red-400/70 hover:text-red-400' : 'text-red-700/70 hover:text-red-700'} text-[8px] uppercase font-black tracking-widest flex items-center gap-2`}
+                    >
+                      <Trash2 size={12} /> Remove Pillar
+                    </button>
                   </AdminCard>
                 ))}
               </motion.div>
@@ -366,16 +578,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* GALLERY SECTION */}
             {activeTab === 'gallery' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="gallery" className="space-y-10">
-                <button onClick={() => setData({ ...data, gallery: [{ id: Date.now().toString(), title: 'Untreated Vision', description: '', imageUrl: '', metadata: '2025' }, ...data.gallery] })} className="w-full py-12 border-2 border-dashed border-white/5 rounded-3xl opacity-20 hover:opacity-100 transition-all font-black uppercase text-[10px] tracking-widest">+ New Archive Frame</button>
+                <button
+                  onClick={() => {
+                    setData({ ...data, gallery: [{ id: Date.now().toString(), title: 'Untreated Vision', description: '', imageUrl: '', metadata: '2025' }, ...data.gallery] });
+                    showToast('info', 'Gallery item added (auto-save)');
+                  }}
+                  className={`w-full py-12 border-2 border-dashed rounded-3xl transition-all font-black uppercase text-[10px] tracking-widest
+                    ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                >
+                  + New Archive Frame
+                </button>
+
                 {data.gallery.map((g, i) => (
-                  <AdminCard key={g.id} title={`Visual Registry #${i + 1}`}>
+                  <AdminCard key={g.id} title={`Visual Registry #${i + 1}`} isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                     <div className="grid md:grid-cols-2 gap-6">
                       <InputField label="Artistic Label" value={g.title} onChange={(v: any) => { const ng = [...data.gallery]; ng[i].title = v; setData({ ...data, gallery: ng }); }} isDark={isDark} />
                       <InputField label="Temporal Metadata (Year/Date)" value={g.metadata} onChange={(v: any) => { const ng = [...data.gallery]; ng[i].metadata = v; setData({ ...data, gallery: ng }); }} isDark={isDark} />
                     </div>
+
                     <InputField label="Visual Source Pointer" value={g.imageUrl} onOpenLibrary={() => openPicker(url => { const ng = [...data.gallery]; ng[i].imageUrl = url; setData({ ...data, gallery: ng }); })} isDark={isDark} />
                     <TextArea label="Conceptual Narrative" value={g.description} onChange={(v: any) => { const ng = [...data.gallery]; ng[i].description = v; setData({ ...data, gallery: ng }); }} isDark={isDark} />
-                    <button onClick={() => { if (confirm("Archive dissolution?")) setData({ ...data, gallery: data.gallery.filter(item => item.id !== g.id) }) }} className="text-red-500/30 hover:text-red-500 text-[8px] uppercase font-black tracking-widest flex items-center gap-2"><Trash2 size={12} /> Evict Frame</button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm("Archive dissolution?")) {
+                          setData({ ...data, gallery: data.gallery.filter(item => item.id !== g.id) });
+                          showToast('info', 'Gallery item removed (auto-save)');
+                        }
+                      }}
+                      className={`${isDark ? 'text-red-400/70 hover:text-red-400' : 'text-red-700/70 hover:text-red-700'} text-[8px] uppercase font-black tracking-widest flex items-center gap-2`}
+                    >
+                      <Trash2 size={12} /> Evict Frame
+                    </button>
                   </AdminCard>
                 ))}
               </motion.div>
@@ -384,7 +618,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* CONTACT SECTION */}
             {activeTab === 'contact' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="contact" className="space-y-10">
-                <AdminCard title="Dispatch Nodes (Direct Contact)">
+                <AdminCard title="Dispatch Nodes (Direct Contact)" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <div className="grid md:grid-cols-2 gap-6">
                     <InputField label="Email Architecture" value={data.contact.email} onChange={(v: any) => setData({ ...data, contact: { ...data.contact, email: v } })} isDark={isDark} />
                     <InputField label="Voice Pointer (Phone)" value={data.contact.phone} onChange={(v: any) => setData({ ...data, contact: { ...data.contact, phone: v } })} isDark={isDark} />
@@ -395,17 +629,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
                   </div>
                 </AdminCard>
 
-                <AdminCard title="External Pointers (Custom Links)">
+                <AdminCard title="External Pointers (Custom Links)" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   {(data.contact.customLinks || []).map((link, i) => (
-                    <div key={i} className="flex gap-4 items-end border-b border-white/5 pb-4 mb-4">
+                    <div key={i} className={`flex gap-4 items-end pb-4 mb-4 ${isDark ? 'border-b border-white/10' : 'border-b border-black/10'}`}>
                       <div className="flex-1 space-y-2">
-                        <InputField label="Label" value={link.name} onChange={(v: any) => { const nl = [...(data.contact.customLinks || [])]; nl[i].name = v; setData({ ...data, contact: { ...data.contact, customLinks: nl } }) }} isDark={isDark} />
-                        <InputField label="URL Node" value={link.url} onChange={(v: any) => { const nl = [...(data.contact.customLinks || [])]; nl[i].url = v; setData({ ...data, contact: { ...data.contact, customLinks: nl } }) }} isDark={isDark} />
+                        <InputField label="Label" value={link.name} onChange={(v: any) => { const nl = [...(data.contact.customLinks || [])]; nl[i].name = v; setData({ ...data, contact: { ...data.contact, customLinks: nl } }); }} isDark={isDark} />
+                        <InputField label="URL Node" value={link.url} onChange={(v: any) => { const nl = [...(data.contact.customLinks || [])]; nl[i].url = v; setData({ ...data, contact: { ...data.contact, customLinks: nl } }); }} isDark={isDark} />
                       </div>
-                      <button onClick={() => { const nl = (data.contact.customLinks || []).filter((_, idx) => idx !== i); setData({ ...data, contact: { ...data.contact, customLinks: nl } }) }} className="p-5 text-red-500"><Trash2 size={18} /></button>
+                      <button
+                        onClick={() => {
+                          const nl = (data.contact.customLinks || []).filter((_, idx) => idx !== i);
+                          setData({ ...data, contact: { ...data.contact, customLinks: nl } });
+                          showToast('info', 'Link removed (auto-save)');
+                        }}
+                        className={`${isDark ? 'text-red-400' : 'text-red-700'} p-5`}
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   ))}
-                  <button onClick={() => setData({ ...data, contact: { ...data.contact, customLinks: [...(data.contact.customLinks || []), { name: 'Label', url: '' }] } })} className="w-full py-3 border border-dashed border-white/5 text-[9px] uppercase font-black opacity-30 hover:opacity-100">+ Add custom link</button>
+
+                  <button
+                    onClick={() => {
+                      setData({ ...data, contact: { ...data.contact, customLinks: [...(data.contact.customLinks || []), { name: 'Label', url: '' }] } });
+                      showToast('info', 'Link added (auto-save)');
+                    }}
+                    className={`w-full py-3 border border-dashed rounded-xl text-[9px] uppercase font-black transition-all
+                      ${isDark ? 'border-white/10 text-white/40 hover:text-white' : 'border-black/15 text-black/60 hover:text-black'}`}
+                  >
+                    + Add custom link
+                  </button>
                 </AdminCard>
               </motion.div>
             )}
@@ -413,20 +666,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* MEDIA VAULT SECTION */}
             {activeTab === 'media' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="media" className="space-y-8">
-                <AdminCard title="The Asset Vault">
+                <AdminCard title="The Asset Vault" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
                   <div className="flex flex-col md:flex-row gap-4 mb-10">
-                    <button onClick={() => fileInputRef.current?.click()} className={`${isDark ? 'bg-white text-black' : 'bg-black text-white'} px-10 py-5 rounded-2xl text-[10px] uppercase font-black tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95`}>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`${isDark ? 'bg-white text-black' : 'bg-black text-white'} px-10 py-5 rounded-2xl text-[10px] uppercase font-black tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95`}
+                    >
                       <Upload size={16} /> Local Ingestion
                     </button>
+                    {isProcessing && (
+                      <div className={`flex items-center gap-2 text-[10px] uppercase font-black tracking-widest ${mutedText}`}>
+                        <Loader2 className="animate-spin" size={16} /> Processing
+                      </div>
+                    )}
                   </div>
+
                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
+
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                     {data.mediaLibrary.map((url, i) => (
-                      <div key={i} className="group relative aspect-[3/4] rounded-2xl overflow-hidden bg-zinc-900 border border-white/5 shadow-xl">
-                        <img src={url} className="w-full h-full object-cover grayscale transition-all duration-700" />
-                        <div className="absolute inset-0 bg-black/95 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-all duration-300 p-4">
-                          <button onClick={() => { navigator.clipboard.writeText(url); setCopyStatus(url); setTimeout(() => setCopyStatus(null), 2000); }} className="w-full py-3 bg-white text-black rounded-lg text-[8px] uppercase font-black tracking-widest">{copyStatus === url ? 'Linked' : 'Pointer'}</button>
-                          <button onClick={() => { if (confirm("Evict asset?")) { const nl = data.mediaLibrary.filter(u => u !== url); setData({ ...data, mediaLibrary: nl }); } }} className="w-full py-3 bg-red-500/10 text-red-500 rounded-lg text-[8px] uppercase font-black tracking-widest">Dissolve</button>
+                      <div key={i} className={`group relative aspect-[3/4] rounded-2xl overflow-hidden border shadow-xl ${isDark ? 'bg-zinc-900 border-white/10' : 'bg-white border-black/10'}`}>
+                        <img src={url} className="w-full h-full object-cover transition-all duration-700 grayscale group-hover:grayscale-0" />
+                        <div className="absolute inset-0 bg-black/90 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-3 transition-all duration-300 p-4">
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(url); setCopyStatus(url); setTimeout(() => setCopyStatus(null), 2000); showToast('success', 'Copied'); }}
+                            className="w-full py-3 bg-white text-black rounded-lg text-[8px] uppercase font-black tracking-widest"
+                          >
+                            {copyStatus === url ? 'Linked' : 'Pointer'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm("Evict asset?")) {
+                                const nl = data.mediaLibrary.filter(u => u !== url);
+                                setData({ ...data, mediaLibrary: nl });
+                                showToast('info', 'Asset removed (auto-save)');
+                              }
+                            }}
+                            className="w-full py-3 bg-red-500/10 text-red-300 rounded-lg text-[8px] uppercase font-black tracking-widest"
+                          >
+                            Dissolve
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -438,14 +717,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
             {/* SECURITY SECTION */}
             {activeTab === 'security' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} key="security" className="space-y-8">
-                <AdminCard title="Access Architecture">
-                  <div className="p-8 bg-red-500/5 border border-red-500/10 rounded-2xl flex items-start gap-4 mb-10">
-                    <ShieldAlert className="text-red-500 shrink-0 mt-1" size={24} />
-                    <p className="text-[11px] leading-relaxed opacity-60">Modification of these identifiers will immediately lock the registry. Ensure new pointers are archived.</p>
+                <AdminCard title="Access Architecture" isDark={isDark} cardBg={cardBg} titleBorder={cardTitleBorder} titleText={cardTitleText}>
+                  <div className={`p-8 rounded-2xl flex items-start gap-4 mb-10 ${isDark ? 'bg-red-500/5 border border-red-500/10' : 'bg-red-500/10 border border-red-500/20'}`}>
+                    <ShieldAlert className={`${isDark ? 'text-red-400' : 'text-red-600'} shrink-0 mt-1`} size={24} />
+                    <p className={`text-[11px] leading-relaxed ${mutedText}`}>
+                      Modification of these identifiers will immediately lock the registry. Ensure new pointers are archived.
+                    </p>
                   </div>
+
                   <div className="grid md:grid-cols-2 gap-8">
-                    <InputField label="Registry Identifier (User)" value={data.auth?.username ?? ''} onChange={(v: any) => setData({ ...data, auth: { ...(data.auth || { password: 'admin' }), username: v } })} isDark={isDark} />
-                    <InputField label="Security Passphrase (Pass)" value={data.auth?.password ?? ''} onChange={(v: any) => setData({ ...data, auth: { ...(data.auth || { username: 'admin' }), password: v } })} isDark={isDark} />
+                    <InputField
+                      label="Registry Identifier (User)"
+                      value={data.auth?.username ?? ''}
+                      onChange={(v: any) => setData({ ...data, auth: { ...(data.auth || { password: 'admin' }), username: v } })}
+                      isDark={isDark}
+                    />
+                    <InputField
+                      label="Security Passphrase (Pass)"
+                      value={data.auth?.password ?? ''}
+                      onChange={(v: any) => setData({ ...data, auth: { ...(data.auth || { username: 'admin' }), password: v } })}
+                      isDark={isDark}
+                    />
                   </div>
                 </AdminCard>
               </motion.div>
@@ -457,18 +749,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
       {/* VAULT PICKER OVERLAY */}
       <AnimatePresence>
         {showPicker && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[1200] bg-black/98 flex items-center justify-center p-4 md:p-10 backdrop-blur-3xl">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[1200] bg-black/95 flex items-center justify-center p-4 md:p-10 backdrop-blur-3xl">
             <div className={`w-full max-w-5xl ${sidebarBg} border ${borderClass} rounded-[2.5rem] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden`}>
-              <div className="p-8 border-b border-white/5 flex justify-between items-center">
-                <h3 className="text-2xl font-display uppercase tracking-widest">Select Asset</h3>
+              <div className={`p-8 flex justify-between items-center border-b ${isDark ? 'border-white/10' : 'border-black/10'}`}>
+                <h3 className={`text-2xl font-display uppercase tracking-widest ${isDark ? 'text-white' : 'text-black'}`}>Select Asset</h3>
                 <button onClick={() => setShowPicker(false)} className="p-4 bg-white/5 rounded-full hover:bg-red-500 transition-all"><X size={20} /></button>
               </div>
+
               <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   {data.mediaLibrary.map((url, i) => (
-                    <div key={i} className="group relative aspect-[3/4] rounded-2xl overflow-hidden cursor-pointer" onClick={() => { pickerCallback?.(url); setShowPicker(false); }}>
+                    <div
+                      key={i}
+                      className={`group relative aspect-[3/4] rounded-2xl overflow-hidden cursor-pointer border ${isDark ? 'border-white/10' : 'border-black/10'}`}
+                      onClick={() => { pickerCallback?.(url); setShowPicker(false); showToast('success', 'Asset selected'); }}
+                    >
                       <img src={url} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
-                      <div className="absolute inset-0 bg-emerald-500/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><span className="text-[9px] font-black uppercase text-white tracking-widest">Inject</span></div>
+                      <div className="absolute inset-0 bg-emerald-500/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                        <span className="text-[9px] font-black uppercase text-white tracking-widest">Inject</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -477,13 +776,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ theme, toggleTheme }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SaveToast toast={toast} isDark={isDark} />
     </div>
   );
 };
 
-const AdminCard = ({ title, children }: any) => (
-  <div className="p-8 md:p-10 rounded-[2.5rem] border border-white/5 bg-white/5 backdrop-blur-3xl space-y-10">
-    <h3 className="text-[10px] uppercase font-black tracking-[0.6em] opacity-20 border-b border-white/5 pb-6 flex items-center gap-3">
+const SaveToast = ({ toast, isDark }: { toast: any; isDark: boolean }) => {
+  if (!toast?.show) return null;
+
+  const base = isDark
+    ? 'bg-zinc-950/90 border border-white/10 text-white'
+    : 'bg-white border border-black/10 text-black';
+
+  const tone =
+    toast.type === 'success'
+      ? 'ring-1 ring-emerald-500/30'
+      : toast.type === 'error'
+        ? 'ring-1 ring-red-500/30'
+        : 'ring-1 ring-black/5';
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[2000]">
+      <div className={`px-5 py-3 rounded-2xl shadow-2xl text-[10px] uppercase font-black tracking-widest backdrop-blur-xl ${base} ${tone}`}>
+        {toast.message}
+      </div>
+    </div>
+  );
+};
+
+const AdminCard = ({ title, children, cardBg, titleBorder, titleText }: any) => (
+  <div className={`p-8 md:p-10 rounded-[2.5rem] border backdrop-blur-3xl space-y-10 ${cardBg}`}>
+    <h3 className={`text-[10px] uppercase font-black tracking-[0.6em] border-b pb-6 flex items-center gap-3 ${titleBorder} ${titleText}`}>
       <div className="w-2.5 h-2.5 bg-emerald-500/10 rounded-full border border-emerald-500/30" />
       {title}
     </h3>
@@ -494,30 +818,33 @@ const AdminCard = ({ title, children }: any) => (
 const InputField = ({ label, value, onChange, type = "text", onOpenLibrary, isDark }: any) => (
   <div className="space-y-4 w-full">
     <div className="flex justify-between items-center px-2">
-      <label className="text-[9px] uppercase font-black tracking-[0.4em] opacity-20">{label}</label>
+      <label className={`text-[9px] uppercase font-black tracking-[0.4em] ${isDark ? 'text-white/50' : 'text-black/70'}`}>{label}</label>
       {onOpenLibrary && (
-        <button onClick={onOpenLibrary} className="text-[8px] uppercase font-black tracking-widest flex items-center gap-2 text-emerald-500 opacity-60">
+        <button onClick={onOpenLibrary} className="text-[8px] uppercase font-black tracking-widest flex items-center gap-2 text-emerald-600 opacity-80">
           <FolderOpen size={10} /> Vault
         </button>
       )}
     </div>
+
     <input
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`w-full p-6 rounded-2xl border ${isDark ? 'bg-black/40 border-white/5 text-white' : 'bg-white border-black/5 text-black'} outline-none text-sm font-semibold focus:border-emerald-500/40 transition-all`}
+      className={`w-full p-6 rounded-2xl border outline-none text-sm font-semibold transition-all
+        ${isDark ? 'bg-black/40 border-white/10 text-white focus:border-emerald-500/40' : 'bg-white border-black/10 text-black focus:border-emerald-500/40'}`}
     />
   </div>
 );
 
 const TextArea = ({ label, value, onChange, isDark }: any) => (
   <div className="space-y-4 w-full">
-    <label className="text-[9px] uppercase font-black tracking-[0.4em] px-2 opacity-20">{label}</label>
+    <label className={`text-[9px] uppercase font-black tracking-[0.4em] px-2 ${isDark ? 'text-white/50' : 'text-black/70'}`}>{label}</label>
     <textarea
       rows={5}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`w-full p-6 rounded-2xl border ${isDark ? 'bg-black/40 border-white/5 text-white' : 'bg-white border-black/5 text-black'} outline-none resize-none text-sm font-medium focus:border-emerald-500/40 transition-all`}
+      className={`w-full p-6 rounded-2xl border outline-none resize-none text-sm font-medium transition-all
+        ${isDark ? 'bg-black/40 border-white/10 text-white focus:border-emerald-500/40' : 'bg-white border-black/10 text-black focus:border-emerald-500/40'}`}
     />
   </div>
 );

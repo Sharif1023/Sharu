@@ -1,0 +1,114 @@
+-- MySQL compatible schema for XAMPP / MariaDB
+
+CREATE TABLE IF NOT EXISTS admins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_config (
+  id INT PRIMARY KEY,
+  data JSON NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  tech JSON,
+  image_url TEXT,
+  hover_image_url TEXT,
+  live_url TEXT,
+  badge TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS services (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  icon_type VARCHAR(50) DEFAULT 'code',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gallery (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  image_url TEXT,
+  metadata JSON,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS media_library (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  project_id INT,
+  url TEXT NOT NULL,
+  mime_type VARCHAR(255),
+  size_bytes BIGINT,
+  uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS contacts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  email VARCHAR(255),
+  phone VARCHAR(100),
+  whatsapp VARCHAR(100),
+  github VARCHAR(255),
+  linkedin VARCHAR(255),
+  facebook VARCHAR(255),
+  instagram VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS menu_names (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  public JSON NOT NULL,
+  admin JSON NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS skills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  level INT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS education (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  degree VARCHAR(255),
+  school VARCHAR(255),
+  sort_index INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS timeline (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  year VARCHAR(50),
+  description TEXT,
+  sort_index INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS custom_links (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  portfolio_id INT NOT NULL,
+  name VARCHAR(255),
+  url TEXT
+);
+
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS idx_projects_portfolio ON projects(portfolio_id);
+CREATE INDEX IF NOT EXISTS idx_media_portfolio ON media_library(portfolio_id);
+CREATE INDEX IF NOT EXISTS idx_gallery_portfolio ON gallery(portfolio_id);
